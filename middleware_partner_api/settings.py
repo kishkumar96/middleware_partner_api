@@ -138,6 +138,7 @@ INSTALLED_APPS = [
     'event',
     'mailer.apps.MailerConfig',
     'model.apps.ModelAppConfig',
+    'hazard_tiles',
 ]
 
 MIDDLEWARE = [

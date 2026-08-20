@@ -13,3 +13,6 @@ __pycache__/
 # Local mail test scripts (contain credentials/secrets)
 send_mail.py
 mail_test.py*
+
+# Zarr hazard catalog data (large binary, not source)
+/data/

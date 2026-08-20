@@ -9,6 +9,16 @@ class HazardInformationListView(ListAPIView):
     permission_classes = [AllowAny]
     queryset = HazardInformation.objects.all().order_by("-id")
     serializer_class = HazardInformationSerializer
+    filterset_fields = (
+        "country",
+        "hazard_type",
+        "event_type",
+        "hazard_source",
+        "slr_scenario_m",
+        "return_period_years",
+        "event_label",
+        "model_run",
+    )
 
 
 class HazardInformationRetrieveView(RetrieveAPIView):

@@ -138,3 +138,91 @@ class RiskInformation(models.Model):
             geometry=geometry,
             geometry_computed=True,
         )
+
+
+class RiskScenario(models.Model):
+    """One national-level loss figure for a single SLR x return-period (or
+    SLR x historical/synthetic event) combination, belonging to a
+    RiskInformation dataset. Mirrors national-impact.csv /
+    national-average-loss.csv rows. Sector- and asset-type-level granularity
+    (impact-asset-sector.csv, impact-asset-type.csv, aal_by_sector.csv) is
+    out of scope here and would follow the same SLR/return-period/event
+    dimensional pattern in a separate child table if/when needed."""
+
+    risk_information = models.ForeignKey(
+        RiskInformation,
+        on_delete=models.CASCADE,
+        related_name="scenarios",
+    )
+
+    slr_scenario_m = models.FloatField(
+        help_text="Sea level rise scenario in metres (e.g. 0, 0.25, 0.5, 1.0).",
+    )
+
+    return_period_years = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Return period in years for probabilistic scenarios (e.g. 10, 25, "
+            "50, 100, 200, 500). Null for single historical/synthetic event "
+            "rows and for annual-average-loss rows."
+        ),
+    )
+
+    event_label = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=(
+            "Identifier for a single historical or synthetic event this row "
+            "represents (e.g. a date or synthetic-catalog ID), when this row "
+            "is not a return-period or annual-average-loss row."
+        ),
+    )
+
+    is_annual_average_loss = models.BooleanField(
+        default=False,
+        help_text=(
+            "True for AAL rows (national-average-loss.csv): return_period_years "
+            "and event_label are null and the loss fields represent the annual "
+            "average, not a single event/return-period figure."
+        ),
+    )
+
+    # Exposure (Exposed.* / AAL_Exposed_* columns)
+    exposed_building_value = models.FloatField(null=True, blank=True)
+    exposed_road_value = models.FloatField(null=True, blank=True)
+    exposed_infrastructure_value = models.FloatField(null=True, blank=True)
+    exposed_crop_value = models.FloatField(null=True, blank=True)
+    exposed_population = models.FloatField(null=True, blank=True)
+    exposed_total_value = models.FloatField(null=True, blank=True)
+    exposed_road_km = models.FloatField(null=True, blank=True)
+
+    # Loss (Loss.* / AAL_* columns)
+    total_loss = models.FloatField(null=True, blank=True)
+    building_loss = models.FloatField(null=True, blank=True)
+    road_loss = models.FloatField(null=True, blank=True)
+    infrastructure_loss = models.FloatField(null=True, blank=True)
+    crop_loss = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        db_table = "risk_scenario"
+        # Note: Postgres treats NULLs as distinct in unique constraints, so this
+        # doesn't block duplicate AAL rows (return_period_years and event_label
+        # both null) at the same SLR — acceptable for now since ingestion is
+        # controlled by a single import script, not open user input.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["risk_information", "slr_scenario_m", "return_period_years", "event_label"],
+                name="unique_risk_scenario_dimensions",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        if self.is_annual_average_loss:
+            scenario = "AAL"
+        elif self.return_period_years:
+            scenario = f"RP{self.return_period_years}"
+        else:
+            scenario = self.event_label or "event"
+        return f"RiskScenario {self.pk} | SLR {self.slr_scenario_m} | {scenario}"

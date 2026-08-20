@@ -32,8 +32,14 @@ admin.site.index_title = "PaRTnR2 API"
 from country.views import CountryListView, CountryRetrieveView
 from django.urls import include
 from cyclone_track.views import CycloneTrackListCreateView, CycloneTrackRetrieveView
-from risk_information.views import RiskInformationListCreateView, RiskInformationRetrieveView
+from risk_information.views import (
+    RiskInformationListCreateView,
+    RiskInformationRetrieveView,
+    RiskScenarioListView,
+    RiskScenarioRetrieveView,
+)
 from hazard_information.views import HazardInformationListView, HazardInformationRetrieveView
+from hazard_tiles.views import hazard_tile
 from citizen_science.views import CitizenScienceListCreateView
 from event.views import EventListCreateView, EventRetrieveView
 from model.views import ModelRunListView
@@ -63,6 +69,9 @@ urlpatterns = [
     path("partner_api/v1/risk_information/", RiskInformationListCreateView.as_view()),
     path("partner_api/v1/risk_information/<int:pk>", RiskInformationRetrieveView.as_view()),
     path("partner_api/v1/risk_information/<int:pk>/", RiskInformationRetrieveView.as_view()),
+    path("partner_api/v1/risk_scenario/", RiskScenarioListView.as_view()),
+    path("partner_api/v1/risk_scenario/<int:pk>", RiskScenarioRetrieveView.as_view()),
+    path("partner_api/v1/risk_scenario/<int:pk>/", RiskScenarioRetrieveView.as_view()),
     path("partner_api/v1/hazard_information/", HazardInformationListView.as_view()),
     path(
         "partner_api/v1/hazard_information/<int:pk>",
@@ -71,6 +80,10 @@ urlpatterns = [
     path(
         "partner_api/v1/hazard_information/<int:pk>/",
         HazardInformationRetrieveView.as_view(),
+    ),
+    path(
+        "partner_api/v1/hazard_tiles/<str:source>/<str:slr>/<str:selector>/<int:z>/<int:x>/<int:y>.png",
+        hazard_tile,
     ),
     path("partner_api/v1/citizen_science/", CitizenScienceListCreateView.as_view()),
     path("partner_api/v1/event/", EventListCreateView.as_view()),

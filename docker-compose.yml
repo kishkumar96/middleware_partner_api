@@ -17,13 +17,22 @@ services:
       - "${DJANGO_LOCAL_PORT:-8000}:8000"
     depends_on:
       - db
+    networks:
+      default:
+        # Django's Host-header validation rejects the underscore in the
+        # container_name "middleware_web" (not a valid RFC 1034/1035
+        # hostname), so other containers reach this one via this alias.
+        aliases:
+          - middleware-api
   db:
     image: postgres:14
     container_name: middleware_db
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-      - ./db.sql:/docker-entrypoint-initdb.d/00_restore.sql:ro
+      # Temporarily disabled: db.sql's stale django_migrations history blocks
+      # migrations from running. Re-enable once that's cleaned up separately.
+      # - ./db.sql:/docker-entrypoint-initdb.d/00_restore.sql:ro
     env_file: .env
     environment:
       - POSTGRES_USER=$POSTGRESDB_USER

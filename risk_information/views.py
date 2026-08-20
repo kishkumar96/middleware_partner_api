@@ -1,10 +1,10 @@
-from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import AllowAny, IsAuthenticatedOrReadOnly
 
-from .models import RiskInformation
-from .serializers import RiskInformationSerializer
+from .models import RiskInformation, RiskScenario
+from .serializers import RiskInformationSerializer, RiskScenarioSerializer
 
 
 class RiskInformationPagination(PageNumberPagination):
@@ -35,3 +35,23 @@ class RiskInformationRetrieveView(RetrieveAPIView):
 
     # GET is public (same as list), POST would be in list/create
     permission_classes = (IsAuthenticatedOrReadOnly,)
+
+
+class RiskScenarioListView(ListAPIView):
+    permission_classes = [AllowAny]
+    queryset = RiskScenario.objects.all().order_by("-id")
+    serializer_class = RiskScenarioSerializer
+    pagination_class = RiskInformationPagination
+    filterset_fields = (
+        "risk_information",
+        "slr_scenario_m",
+        "return_period_years",
+        "event_label",
+        "is_annual_average_loss",
+    )
+
+
+class RiskScenarioRetrieveView(RetrieveAPIView):
+    permission_classes = [AllowAny]
+    queryset = RiskScenario.objects.all().select_related("risk_information")
+    serializer_class = RiskScenarioSerializer

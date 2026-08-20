@@ -2,7 +2,7 @@ from django.db import models
 
 from country.models import Country
 from event_type.models import EventType
-from hazard_type.models import HazardType
+from hazard_type.models import HazardSource, HazardType
 
 
 class HazardInformation(models.Model):
@@ -50,6 +50,45 @@ class HazardInformation(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
         related_name="hazard_information",
+    )
+
+    # Scenario dimensions for probabilistic / multi-scenario hazard catalogs
+    # (e.g. Cook Islands: hazard source x SLR scenario x return period, or
+    # x a specific historical/synthetic event). One row still equals one
+    # published WMS layer/URL; these fields let that layer be filtered and
+    # grouped by scenario instead of being an opaque, undated upload.
+    hazard_source = models.ForeignKey(
+        HazardSource,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="hazard_information",
+    )
+
+    slr_scenario_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Sea level rise scenario in metres (e.g. 0, 0.25, 0.5, 1.0).",
+    )
+
+    return_period_years = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Return period in years for probabilistic layers (e.g. 10, 25, 50, "
+            "100, 200, 500). Null for single historical/synthetic event layers."
+        ),
+    )
+
+    event_label = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=(
+            "Identifier for a single historical or synthetic event this layer "
+            "represents (e.g. a date or synthetic-catalog ID), when this row "
+            "is not a return-period/probabilistic layer."
+        ),
     )
 
     class Meta:
