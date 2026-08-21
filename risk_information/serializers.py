@@ -27,11 +27,19 @@ class RiskInformationSerializer(serializers.ModelSerializer):
 
 
 class RiskScenarioSerializer(serializers.ModelSerializer):
+    # Denormalized so a consumer can filter/group by country and identify
+    # which hazard product (tc/swell/combined/historical_tcs/...) a scenario
+    # belongs to without a second request per risk_information id.
+    country = serializers.IntegerField(source="risk_information.country_id", read_only=True)
+    risk_information_title = serializers.CharField(source="risk_information.title", read_only=True)
+
     class Meta:
         model = RiskScenario
         fields = (
             "id",
             "risk_information",
+            "risk_information_title",
+            "country",
             "slr_scenario_m",
             "return_period_years",
             "event_label",

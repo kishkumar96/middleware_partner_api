@@ -39,11 +39,12 @@ class RiskInformationRetrieveView(RetrieveAPIView):
 
 class RiskScenarioListView(ListAPIView):
     permission_classes = [AllowAny]
-    queryset = RiskScenario.objects.all().order_by("-id")
+    queryset = RiskScenario.objects.all().select_related("risk_information").order_by("-id")
     serializer_class = RiskScenarioSerializer
     pagination_class = RiskInformationPagination
     filterset_fields = (
         "risk_information",
+        "risk_information__country",
         "slr_scenario_m",
         "return_period_years",
         "event_label",
