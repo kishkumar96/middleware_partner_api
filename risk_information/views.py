@@ -17,6 +17,12 @@ class RiskInformationListCreateView(ListCreateAPIView):
     queryset = RiskInformation.objects.all().order_by("-id")
     serializer_class = RiskInformationSerializer
     pagination_class = RiskInformationPagination
+    # Without this, ?country= is silently ignored (DjangoFilterBackend only
+    # filters on fields listed here) and every request returns all
+    # countries' rows -- geometry included, so ~76MB instead of one
+    # country's share of it. HazardInformationListView already does this
+    # correctly; RiskScenarioListView below does too.
+    filterset_fields = ("country",)
 
     # GET is public, POST requires auth
     permission_classes = (IsAuthenticatedOrReadOnly,)
