@@ -25,6 +25,29 @@ class RiskInformationSerializer(serializers.ModelSerializer):
             "created_at",
         )
 
+    # Building/road-damage geometry dwarfs everything else in this table
+    # (tens of MB per country) yet is only ever used once the Buildings/
+    # Roads map overlay is switched on -- every other row (regional
+    # impacts, national summary, ...) is needed immediately. Rather than
+    # a separate endpoint, ?defer_large_assets=true nulls geometry out for
+    # just these rows in the list response; the client re-fetches a row's
+    # full geometry individually (via the retrieve view, which never
+    # takes this param) only when its overlay is actually turned on.
+    LARGE_ASSET_UPLOAD_MARKERS = ("damaged-building", "damaged building", "damaged-road", "damaged road")
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if request and request.query_params.get("defer_large_assets") == "true":
+            upload_name = (instance.upload.name or "").lower()
+            title = (instance.title or "").lower()
+            if any(
+                marker in upload_name or marker in title
+                for marker in self.LARGE_ASSET_UPLOAD_MARKERS
+            ):
+                data["geometry"] = None
+        return data
+
 
 class RiskScenarioSerializer(serializers.ModelSerializer):
     # Denormalized so a consumer can filter/group by country and identify
