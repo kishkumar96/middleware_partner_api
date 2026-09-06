@@ -37,8 +37,12 @@ class RiskInformationSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        request = self.context.get("request")
-        if request and request.query_params.get("defer_large_assets") == "true":
+        # Read from a context flag the view opts into explicitly, not the raw
+        # request query params -- otherwise a client that happens to pass
+        # ?defer_large_assets=true to the retrieve-by-id endpoint would null
+        # out that row's geometry too, contradicting the documented contract
+        # that retrieve always returns full geometry for one row.
+        if self.context.get("defer_large_assets"):
             upload_name = (instance.upload.name or "").lower()
             title = (instance.title or "").lower()
             if any(

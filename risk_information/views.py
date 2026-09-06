@@ -30,6 +30,11 @@ class RiskInformationListCreateView(ListCreateAPIView):
     # Needed for file upload
     parser_classes = (MultiPartParser, FormParser)
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["defer_large_assets"] = self.request.query_params.get("defer_large_assets") == "true"
+        return context
+
 
 class RiskInformationRetrieveView(RetrieveAPIView):
     queryset = RiskInformation.objects.all().select_related(
