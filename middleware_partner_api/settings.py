@@ -71,21 +71,26 @@ def _getenv_list(name: str, default: list[str]) -> list[str]:
 
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-lymg9)8=_5s3yhdbgol#z&6pdaz5&8f30!o2%38ofhc_%gun5)",
-)
+# No hardcoded fallback: fail loudly rather than silently run on a key that's
+# sitting in git history. Set DJANGO_SECRET_KEY in every environment,
+# including local dev (docker-compose already does this).
+SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = _getenv_bool("DJANGO_DEBUG", True)
+# Defaults to False (fail closed) - opt into DEBUG explicitly per environment
+# rather than opting out of it.
+DEBUG = _getenv_bool("DJANGO_DEBUG", False)
 
 CSRF_TRUSTED_ORIGINS = _getenv_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
-    ["https://*.spc.int", "http://localhost*"],
+    ["https://*.spc.int"],
 )
 
-ALLOWED_HOSTS = _getenv_list("DJANGO_ALLOWED_HOSTS", ["*"])
-CORS_ALLOW_ALL_ORIGINS = _getenv_bool("CORS_ALLOW_ALL_ORIGINS", True)
+# No wildcard fallback: an empty ALLOWED_HOSTS fails closed (Django rejects
+# every request) instead of silently accepting Host headers from anywhere.
+ALLOWED_HOSTS = _getenv_list("DJANGO_ALLOWED_HOSTS", [])
+CORS_ALLOW_ALL_ORIGINS = _getenv_bool("CORS_ALLOW_ALL_ORIGINS", False)
+CORS_ALLOWED_ORIGINS = _getenv_list("CORS_ALLOWED_ORIGINS", [])
 
 
 REST_FRAMEWORK = {
@@ -174,27 +179,6 @@ WSGI_APPLICATION = "middleware_partner_api.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-"""
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
-"""
-"""
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'partner-api',
-        'USER': 'postgres',
-        'PASSWORD': 'Oceanportal2017*',
-        #'HOST': 'db',
-        'HOST': 'localhost',
-        'PORT': '5432'
-    }
-}
-"""
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -204,9 +188,10 @@ DATABASES = {
         'USER': os.getenv('POSTGRES_USER')
         or os.getenv('POSTGRESDB_USER')
         or 'postgres',
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD')
-        or os.getenv('POSTGRESDB_ROOT_PASSWORD')
-        or 'Oceanportal2017*',
+        # No hardcoded fallback password: fail loudly instead of silently
+        # running against a credential that's sitting in git history.
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD')
+        or os.environ['POSTGRESDB_ROOT_PASSWORD'],
         'HOST': os.getenv('POSTGRES_HOST')
         or os.getenv('POSTGRESDB_HOST')
         or os.getenv('DJANGO_DB_HOST')
