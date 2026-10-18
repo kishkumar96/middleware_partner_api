@@ -1,7 +1,8 @@
 """Imports the Cook Islands dimensional risk analysis (SLR x return-period/
 event, mirroring national-impact.csv / national-average-loss.csv) into
 RiskInformation (one parent row per hazard product) + RiskScenario (one
-child row per SLR x return-period/event combination).
+child row per SLR x return-period/event combination) + RiskScenarioBreakdown
+(that scenario's loss by sector and by asset type).
 
 Source layout (see data/ck_risk_analysis/README.txt), one folder per
 product, matching hazard_tiles.views.PRODUCTS exactly:
@@ -15,23 +16,36 @@ product, matching hazard_tiles.views.PRODUCTS exactly:
 Each folder's national-impact.csv holds one row per (SLR, Event) or (SLR,
 Return_Period). Probabilistic folders additionally have
 national-average-loss.csv, one row per SLR (the annual average loss,
-no return-period/event dimension).
+no return-period/event dimension), and aal_by_sector.csv.
+impact-asset-sector.csv and impact-asset-type.csv break each national row
+down by sector and by asset type.
 
-Safe to re-run: RiskScenario rows are matched by their own natural key
+Reconciliation: a scenario's asset-type losses must sum to its national
+loss. Prob_combo_AAL's national-impact.csv as delivered has 22 of its 24
+rows under the wrong (SLR, Return_Period) label: every row matches exactly
+one scenario's breakdown on all four loss components, and only relabelled
+do losses rise with return period and SLR. When national rows don't
+reconcile but each matches exactly one breakdown scenario on every loss
+component, they're relabelled to that scenario (and reported); otherwise
+they're imported as-is with a warning.
+
+Safe to re-run: RiskScenario rows are matched by their natural key
 (risk_information, slr_scenario_m, return_period_years, event_label) and
-left untouched; the RiskInformation parent per product is matched by
-(country, title).
+their values updated; a product's breakdown rows are replaced; the
+RiskInformation parent per product is matched by (country, title).
 """
 
 import csv
 import os
+from collections import defaultdict
 
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
+from django.db import transaction
 
 from country.models import Country
-from risk_information.models import RiskInformation, RiskScenario
+from risk_information.models import RiskInformation, RiskScenario, RiskScenarioBreakdown
 
 DATA_DIR = os.path.join(settings.BASE_DIR, "data", "ck_risk_analysis")
 
@@ -75,6 +89,31 @@ AAL_FIELD_MAP = {
     "AAL_Crops": "crop_loss",
 }
 
+ASSET_TYPE_FIELD_MAP = {
+    "Exposed_Count": "exposed_count",
+    "Total_Count": "total_count",
+    "Total_Exposed_Value": "exposed_value",
+    "Total_Value": "total_value",
+    "Total_Exposed_Area_Or_Length": "exposed_area_or_length",
+    "Total_Area_Or_Length": "total_area_or_length",
+    "Average_Inundation_Depth": "average_inundation_depth",
+    "Max_Inundation_Depth": "max_inundation_depth",
+    "Total_Loss.Total": "total_loss",
+    "Total_Loss.Building_Loss": "building_loss",
+    "Total_Loss.Road_Loss": "road_loss",
+    "Total_Loss.Infrastructure_Loss": "infrastructure_loss",
+    "Total_Loss.Crop_Loss": "crop_loss",
+}
+
+# National column -> asset-type column, compared when reconciling
+LOSS_COMPONENTS = {
+    "Loss.Total": "Total_Loss.Total",
+    "Loss.Building_Loss": "Total_Loss.Building_Loss",
+    "Loss.Road_Loss": "Total_Loss.Road_Loss",
+    "Loss.Infrastructure_Loss": "Total_Loss.Infrastructure_Loss",
+    "Loss.Crop_Loss": "Total_Loss.Crop_Loss",
+}
+
 
 def to_float(value):
     if value is None or value == "":
@@ -85,10 +124,23 @@ def to_float(value):
         return None
 
 
+def close(a, b):
+    # Source values are rounded to whole dollars per row
+    return abs(a - b) <= max(2.0, 1e-4 * max(abs(a), abs(b)))
+
+
 class Command(BaseCommand):
-    help = "Import Cook Islands dimensional risk analysis (national-impact/national-average-loss CSVs) into RiskInformation/RiskScenario."
+    help = (
+        "Import Cook Islands dimensional risk analysis (national-impact/national-average-loss "
+        "CSVs plus sector/asset-type breakdowns) into RiskInformation/RiskScenario/RiskScenarioBreakdown."
+    )
+
+    def add_arguments(self, parser):
+        parser.add_argument("--data-dir", default=DATA_DIR)
 
     def read_csv_rows(self, path):
+        if not os.path.exists(path):
+            return None
         with open(path, newline="", encoding="utf-8-sig") as f:
             return list(csv.DictReader(f))
 
@@ -109,76 +161,182 @@ class Command(BaseCommand):
             self.stderr.write("Cook Islands country row not found (expected short_name='CK').")
             return
 
-        created, skipped, failed = 0, 0, 0
-
+        totals = defaultdict(int)
         for folder, (title, is_event_based) in FOLDER_TO_PRODUCT.items():
-            folder_path = os.path.join(DATA_DIR, folder)
-            impact_csv = os.path.join(folder_path, "national-impact.csv")
-            if not os.path.exists(impact_csv):
-                self.stderr.write(f"Missing {impact_csv}, skipping {folder}.")
-                failed += 1
+            folder_path = os.path.join(options["data_dir"], folder)
+            impact_rows = self.read_csv_rows(os.path.join(folder_path, "national-impact.csv"))
+            if impact_rows is None:
+                self.stderr.write(f"Missing {folder}/national-impact.csv, skipping {folder}.")
+                totals["failed"] += 1
                 continue
+            with transaction.atomic():
+                self.import_product(country, folder, folder_path, title, is_event_based, impact_rows, totals)
 
-            risk_info = self.get_or_create_parent(country, title)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Done. RiskScenario rows: created {totals['created']}, updated {totals['updated']}, "
+                f"relabelled {totals['relabelled']}, failed {totals['failed']}. "
+                f"Breakdown rows: {totals['breakdowns']} ({totals['unmatched']} without a matching scenario)."
+            )
+        )
 
-            for row in self.read_csv_rows(impact_csv):
-                slr = to_float(row.get("SLR"))
-                if slr is None:
-                    failed += 1
-                    continue
-
-                event_label = row.get("Event") if is_event_based else None
-                return_period = None if is_event_based else int(float(row["Return_Period"]))
-
-                _, was_created = RiskScenario.objects.get_or_create(
-                    risk_information=risk_info,
-                    slr_scenario_m=slr,
-                    return_period_years=return_period,
-                    event_label=event_label,
-                    defaults={
-                        "is_annual_average_loss": False,
-                        **{
-                            model_field: to_float(row.get(csv_col))
-                            for csv_col, model_field in IMPACT_FIELD_MAP.items()
-                        },
-                    },
-                )
-                created += was_created
-                skipped += not was_created
-
+    def import_product(self, country, folder, folder_path, title, is_event_based, impact_rows, totals):
+        def key(row):
+            slr = to_float(row.get("SLR"))
+            if slr is None:
+                return None
             if is_event_based:
-                continue
+                return (slr, None, row.get("Event"))
+            return (slr, int(float(row["Return_Period"])), None)
 
-            aal_csv = os.path.join(folder_path, "national-average-loss.csv")
-            if not os.path.exists(aal_csv):
-                self.stderr.write(f"Missing {aal_csv}, skipping AAL rows for {folder}.")
-                failed += 1
-                continue
+        asset_rows = self.read_csv_rows(os.path.join(folder_path, "impact-asset-type.csv")) or []
+        sector_rows = self.read_csv_rows(os.path.join(folder_path, "impact-asset-sector.csv")) or []
 
-            for row in self.read_csv_rows(aal_csv):
+        national = {}
+        for row in impact_rows:
+            k = key(row)
+            if k is None:
+                totals["failed"] += 1
+                continue
+            national[k] = row
+        national, relabelled = self.reconcile(folder, national, asset_rows, key)
+        totals["relabelled"] += relabelled
+
+        risk_info = self.get_or_create_parent(country, title)
+        scenario_ids = {}
+        for (slr, return_period, event_label), row in national.items():
+            scenario, was_created = RiskScenario.objects.update_or_create(
+                risk_information=risk_info,
+                slr_scenario_m=slr,
+                return_period_years=return_period,
+                event_label=event_label,
+                defaults={
+                    "is_annual_average_loss": False,
+                    **{field: to_float(row.get(col)) for col, field in IMPACT_FIELD_MAP.items()},
+                },
+            )
+            scenario_ids[(slr, return_period, event_label)] = scenario.pk
+            totals["created" if was_created else "updated"] += 1
+
+        aal_ids = {}
+        if not is_event_based:
+            aal_rows = self.read_csv_rows(os.path.join(folder_path, "national-average-loss.csv"))
+            if aal_rows is None:
+                self.stderr.write(f"Missing {folder}/national-average-loss.csv, skipping AAL rows.")
+                totals["failed"] += 1
+            for row in aal_rows or []:
                 slr = to_float(row.get("SLR"))
                 if slr is None:
-                    failed += 1
+                    totals["failed"] += 1
                     continue
-
-                _, was_created = RiskScenario.objects.get_or_create(
+                scenario, was_created = RiskScenario.objects.update_or_create(
                     risk_information=risk_info,
                     slr_scenario_m=slr,
                     return_period_years=None,
                     event_label=None,
                     defaults={
                         "is_annual_average_loss": True,
-                        **{
-                            model_field: to_float(row.get(csv_col))
-                            for csv_col, model_field in AAL_FIELD_MAP.items()
-                        },
+                        **{field: to_float(row.get(col)) for col, field in AAL_FIELD_MAP.items()},
                     },
                 )
-                created += was_created
-                skipped += not was_created
+                aal_ids[slr] = scenario.pk
+                totals["created" if was_created else "updated"] += 1
 
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Done. Created {created} RiskScenario rows, already existed {skipped}, failed {failed}."
+        RiskScenarioBreakdown.objects.filter(risk_scenario__risk_information=risk_info).delete()
+        breakdowns = []
+        unmatched = set()
+
+        def add(scenario_id, missing_key, **fields):
+            if scenario_id is None:
+                unmatched.add(missing_key)
+                return
+            breakdowns.append(RiskScenarioBreakdown(risk_scenario_id=scenario_id, **fields))
+
+        for row in sector_rows:
+            k = key(row)
+            add(
+                scenario_ids.get(k),
+                k,
+                dimension=RiskScenarioBreakdown.SECTOR,
+                name=row["Sector"],
+                total_loss=to_float(row.get("Total_Loss.Total")),
+            )
+        for row in asset_rows:
+            k = key(row)
+            add(
+                scenario_ids.get(k),
+                k,
+                dimension=RiskScenarioBreakdown.ASSET_TYPE,
+                name=row["UseType"],
+                sector=row.get("Sector") or "",
+                **{field: to_float(row.get(col)) for col, field in ASSET_TYPE_FIELD_MAP.items()},
+            )
+        if not is_event_based:
+            for row in self.read_csv_rows(os.path.join(folder_path, "aal_by_sector.csv")) or []:
+                slr = to_float(row.get("SLR"))
+                add(
+                    aal_ids.get(slr),
+                    ("AAL", slr),
+                    dimension=RiskScenarioBreakdown.SECTOR,
+                    name=row["Sector"],
+                    total_loss=to_float(row.get("AAL")),
+                )
+
+        RiskScenarioBreakdown.objects.bulk_create(breakdowns, batch_size=5000)
+        totals["breakdowns"] += len(breakdowns)
+        if unmatched:
+            totals["unmatched"] += len(unmatched)
+            self.stderr.write(
+                f"{folder}: {len(unmatched)} breakdown scenario(s) have no national row, e.g. {sorted(unmatched, key=str)[:3]}"
+            )
+
+    def reconcile(self, folder, national, asset_rows, key):
+        """Check national rows against their asset-type breakdown sums, and
+        relabel them when they're demonstrably under the wrong scenario key.
+
+        Returns (national rows by key, number relabelled)."""
+        if not asset_rows:
+            return national, 0
+
+        sums = defaultdict(lambda: defaultdict(float))
+        for row in asset_rows:
+            k = key(row)
+            for asset_col in LOSS_COMPONENTS.values():
+                sums[k][asset_col] += to_float(row.get(asset_col)) or 0.0
+
+        def matches(national_row, breakdown_key):
+            return all(
+                close(to_float(national_row.get(nat_col)) or 0.0, sums[breakdown_key][asset_col])
+                for nat_col, asset_col in LOSS_COMPONENTS.items()
+            )
+
+        mismatched = [k for k, row in national.items() if k in sums and not matches(row, k)]
+        if not mismatched:
+            return national, 0
+
+        # Each national row must match exactly one breakdown scenario, and no
+        # two rows the same one; anything less and relabelling would be a guess.
+        relabelled = {}
+        for k, row in national.items():
+            candidates = [bk for bk in sums if matches(row, bk)]
+            if len(candidates) != 1:
+                relabelled = None
+                break
+            relabelled[candidates[0]] = row
+        if relabelled is None or len(relabelled) != len(national):
+            self.stderr.write(
+                self.style.WARNING(
+                    f"{folder}: {len(mismatched)} national row(s) don't match their sector/asset "
+                    f"breakdown, e.g. {mismatched[:3]}; importing as-is."
+                )
+            )
+            return national, 0
+
+        moved = sum(1 for k, row in national.items() if relabelled.get(k) is not row)
+        self.stderr.write(
+            self.style.WARNING(
+                f"{folder}: {moved} national-impact.csv row(s) were under the wrong scenario label; "
+                "relabelled to the scenario whose sector/asset breakdown they match exactly."
             )
         )
+        return relabelled, moved

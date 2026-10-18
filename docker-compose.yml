@@ -24,6 +24,20 @@ services:
         # hostname), so other containers reach this one via this alias.
         aliases:
           - middleware-api
+  # Works the model queue: claims runs the API queued when a track arrived, runs them on the
+  # RiskScape platform, and publishes the results. Its own container so a web restart cannot lose a
+  # run in progress. Needs RISKSCAPE_TOKEN (and optionally PARTNER_API_URL) in .env.
+  runner:
+    build: .
+    container_name: middleware_runner
+    restart: unless-stopped
+    command: python /code/manage.py run_model_queue --server-name riskscape.nz
+    env_file: .env
+    volumes:
+      - .:/code
+      - media_volume:/code/media
+    depends_on:
+      - db
   db:
     image: postgres:14
     container_name: middleware_db

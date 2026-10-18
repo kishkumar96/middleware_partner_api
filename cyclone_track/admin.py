@@ -1,12 +1,31 @@
+from django import forms
 from django.contrib import admin
 from django.contrib import messages
 
 from .models import CycloneTrack
 from mailer.utils import SPCMailer
+from model.queueing import queue_runs_for_track
+from model.run_descriptions import describe_queued_run, explain_nothing_queued
+
+
+class CycloneTrackAdminForm(forms.ModelForm):
+    start_runs = forms.BooleanField(
+        required=False,
+        label="Start model runs when saved",
+        help_text=(
+            "Queue the pipeline for this track type (forecast: Rapid, best track: PDNA) as soon as "
+            "the track is saved. Leave unticked when importing historical storms."
+        ),
+    )
+
+    class Meta:
+        model = CycloneTrack
+        fields = "__all__"
 
 
 @admin.register(CycloneTrack)
 class CycloneTrackAdmin(admin.ModelAdmin):
+    form = CycloneTrackAdminForm
     list_display = (
         "cyclone_name",
         "issued_time",
@@ -28,8 +47,33 @@ class CycloneTrackAdmin(admin.ModelAdmin):
         "country__long_name",
     )
 
+    actions = ("queue_model_runs",)
+
+    @admin.action(description="Queue model runs for selected tracks")
+    def queue_model_runs(self, request, queryset):
+        # Tracks added in the admin don't queue runs on their own (unless
+        # "Start model runs when saved" is ticked), so that importing
+        # historical storms doesn't start model runs.
+        for track in queryset.select_related("cyclone_track_type", "country"):
+            self.start_runs(request, track)
+
+    def start_runs(self, request, track):
+        """Queue the track's pipeline and say what happened, or why nothing did."""
+        if not track.geometry_computed:
+            self.message_user(request, explain_nothing_queued(track), level=messages.WARNING)
+            return
+        runs = queue_runs_for_track(track)
+        for run in runs:
+            self.message_user(request, describe_queued_run(run), level=messages.SUCCESS)
+        if not runs:
+            self.message_user(request, explain_nothing_queued(track), level=messages.WARNING)
+
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
+
+        if form.cleaned_data.get("start_runs"):
+            obj.refresh_from_db()  # geometry is computed during save
+            self.start_runs(request, obj)
 
         # Only send on initial create in admin.
         if change:

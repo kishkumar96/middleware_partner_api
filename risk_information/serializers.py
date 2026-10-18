@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import RiskInformation, RiskScenario
+from .models import RiskInformation, RiskScenario, RiskScenarioBreakdown
 
 
 class RiskInformationSerializer(serializers.ModelSerializer):
@@ -9,6 +9,7 @@ class RiskInformationSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "title",
+            "dataset_type",
             "risk_category",
             "upload",
             "geometry",
@@ -33,7 +34,15 @@ class RiskInformationSerializer(serializers.ModelSerializer):
     # just these rows in the list response; the client re-fetches a row's
     # full geometry individually (via the retrieve view, which never
     # takes this param) only when its overlay is actually turned on.
-    LARGE_ASSET_UPLOAD_MARKERS = ("damaged-building", "damaged building", "damaged-road", "damaged road")
+    # REF's floodplain-exposure (~8 MB) is a map overlay too
+    LARGE_ASSET_UPLOAD_MARKERS = (
+        "damaged-building",
+        "damaged building",
+        "damaged-road",
+        "damaged road",
+        "floodplain-exposure",
+        "floodplain exposure",
+    )
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -85,3 +94,28 @@ class RiskScenarioSerializer(serializers.ModelSerializer):
             "crop_loss",
         )
         read_only_fields = ("id",)
+
+
+class RiskScenarioBreakdownSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RiskScenarioBreakdown
+        fields = (
+            "id",
+            "risk_scenario",
+            "dimension",
+            "name",
+            "sector",
+            "exposed_count",
+            "total_count",
+            "exposed_value",
+            "total_value",
+            "exposed_area_or_length",
+            "total_area_or_length",
+            "average_inundation_depth",
+            "max_inundation_depth",
+            "total_loss",
+            "building_loss",
+            "road_loss",
+            "infrastructure_loss",
+            "crop_loss",
+        )

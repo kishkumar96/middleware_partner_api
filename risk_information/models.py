@@ -12,6 +12,10 @@ from .utils import convert_uploaded_file_to_geometry
 class RiskInformation(models.Model):
 
     title = models.CharField(max_length=255, null=True, blank=True)
+    # Stable, machine-readable role for this upload (for example
+    # "forecast_floodplain" or "regional_impacts"). Clients should use this
+    # instead of parsing a storage filename; blank preserves legacy uploads.
+    dataset_type = models.CharField(max_length=100, blank=True, default="", db_index=True)
     risk_category = models.ForeignKey(
         RiskCategory,
         null=True,
@@ -144,10 +148,8 @@ class RiskScenario(models.Model):
     """One national-level loss figure for a single SLR x return-period (or
     SLR x historical/synthetic event) combination, belonging to a
     RiskInformation dataset. Mirrors national-impact.csv /
-    national-average-loss.csv rows. Sector- and asset-type-level granularity
-    (impact-asset-sector.csv, impact-asset-type.csv, aal_by_sector.csv) is
-    out of scope here and would follow the same SLR/return-period/event
-    dimensional pattern in a separate child table if/when needed."""
+    national-average-loss.csv rows. Sector- and asset-type-level detail for
+    the same scenario lives in RiskScenarioBreakdown."""
 
     risk_information = models.ForeignKey(
         RiskInformation,
@@ -226,3 +228,49 @@ class RiskScenario(models.Model):
         else:
             scenario = self.event_label or "event"
         return f"RiskScenario {self.pk} | SLR {self.slr_scenario_m} | {scenario}"
+
+
+class RiskScenarioBreakdown(models.Model):
+    """One sector's or asset type's share of a RiskScenario: a row of
+    impact-asset-sector.csv / aal_by_sector.csv (dimension "sector") or
+    impact-asset-type.csv (dimension "asset_type") for the same SLR x
+    return-period/event. Losses across one scenario's rows of a dimension
+    sum to the scenario's national total_loss."""
+
+    SECTOR = "sector"
+    ASSET_TYPE = "asset_type"
+    DIMENSION_CHOICES = [(SECTOR, "Sector"), (ASSET_TYPE, "Asset type")]
+
+    risk_scenario = models.ForeignKey(
+        RiskScenario,
+        on_delete=models.CASCADE,
+        related_name="breakdowns",
+    )
+    dimension = models.CharField(max_length=20, choices=DIMENSION_CHOICES)
+    # Sector (e.g. "Build-Commercial") or asset type (UseType, e.g. "Coconut")
+    name = models.CharField(max_length=255)
+    # Asset-type rows only: the sector the asset type belongs to
+    sector = models.CharField(max_length=255, blank=True)
+
+    # Asset-type rows only
+    exposed_count = models.FloatField(null=True, blank=True)
+    total_count = models.FloatField(null=True, blank=True)
+    exposed_value = models.FloatField(null=True, blank=True)
+    total_value = models.FloatField(null=True, blank=True)
+    exposed_area_or_length = models.FloatField(null=True, blank=True)
+    total_area_or_length = models.FloatField(null=True, blank=True)
+    average_inundation_depth = models.FloatField(null=True, blank=True)
+    max_inundation_depth = models.FloatField(null=True, blank=True)
+
+    total_loss = models.FloatField(null=True, blank=True)
+    building_loss = models.FloatField(null=True, blank=True)
+    road_loss = models.FloatField(null=True, blank=True)
+    infrastructure_loss = models.FloatField(null=True, blank=True)
+    crop_loss = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        db_table = "risk_scenario_breakdown"
+        indexes = [models.Index(fields=["risk_scenario", "dimension"])]
+
+    def __str__(self) -> str:
+        return f"{self.get_dimension_display()} {self.name} of {self.risk_scenario}"

@@ -31,11 +31,16 @@ admin.site.index_title = "PaRTnR2 API"
 
 from country.views import CountryListView, CountryRetrieveView
 from django.urls import include
-from cyclone_track.views import CycloneTrackListCreateView, CycloneTrackRetrieveView
+from cyclone_track.views import (
+    CycloneTrackListCreateView,
+    CycloneTrackModelInputView,
+    CycloneTrackRetrieveView,
+)
 from risk_information.views import (
     RiskInformationListCreateView,
     RiskInformationRetrieveView,
     RiskScenarioListView,
+    RiskScenarioBreakdownListView,
     RiskScenarioRetrieveView,
 )
 from hazard_information.views import HazardInformationListView, HazardInformationRetrieveView
@@ -45,6 +50,18 @@ from event.views import EventListCreateView, EventRetrieveView
 from model.views import ModelRunListView
 from model.views_update import ModelRunUpdateCompletedView
 from model.views_logs import ModelLogsListCreateView
+from model.views_queue import (
+    ModelOperationsStatusView,
+    ModelRunClaimView,
+    ModelRunFinishView,
+    RunnerHeartbeatView,
+)
+from model.views_operator import (
+    OperatorMeView,
+    OperatorPipelinesView,
+    OperatorRunsView,
+    OperatorSubmitTrackView,
+)
 from mailer.views import (
     MailConfigurationDetailView,
     MailConfigurationListCreateView,
@@ -66,12 +83,14 @@ urlpatterns = [
     path("partner_api/v1/cyclone_track/", CycloneTrackListCreateView.as_view()),
     path("partner_api/v1/cyclone_track/<int:pk>", CycloneTrackRetrieveView.as_view()),
     path("partner_api/v1/cyclone_track/<int:pk>/", CycloneTrackRetrieveView.as_view()),
+    path("partner_api/v1/cyclone_track/<int:pk>/model_input/", CycloneTrackModelInputView.as_view()),
     path("partner_api/v1/risk_information/", RiskInformationListCreateView.as_view()),
     path("partner_api/v1/risk_information/<int:pk>", RiskInformationRetrieveView.as_view()),
     path("partner_api/v1/risk_information/<int:pk>/", RiskInformationRetrieveView.as_view()),
     path("partner_api/v1/risk_scenario/", RiskScenarioListView.as_view()),
     path("partner_api/v1/risk_scenario/<int:pk>", RiskScenarioRetrieveView.as_view()),
     path("partner_api/v1/risk_scenario/<int:pk>/", RiskScenarioRetrieveView.as_view()),
+    path("partner_api/v1/risk_scenario_breakdown/", RiskScenarioBreakdownListView.as_view()),
     path("partner_api/v1/hazard_information/", HazardInformationListView.as_view()),
     path(
         "partner_api/v1/hazard_information/<int:pk>",
@@ -92,6 +111,16 @@ urlpatterns = [
 
     # ModelRun
     path("partner_api/v1/model_run/", ModelRunListView.as_view()),
+    # Runner queue: claim the next job for a server, then report its result
+    path("partner_api/v1/model_run/claim/", ModelRunClaimView.as_view()),
+    # Operator page: superusers submit a track by hand and follow its runs
+    path("partner_api/v1/operator/me/", OperatorMeView.as_view()),
+    path("partner_api/v1/operator/pipelines/", OperatorPipelinesView.as_view()),
+    path("partner_api/v1/operator/tracks/", OperatorSubmitTrackView.as_view()),
+    path("partner_api/v1/operator/runs/", OperatorRunsView.as_view()),
+    path("partner_api/v1/model_run/<int:pk>/finish/", ModelRunFinishView.as_view()),
+    path("partner_api/v1/model_run/operations/", ModelOperationsStatusView.as_view()),
+    path("partner_api/v1/model_run/heartbeat/", RunnerHeartbeatView.as_view()),
         # PATCH model_run_completed
         path("partner_api/v1/model_run/<int:pk>/update_completed/", ModelRunUpdateCompletedView.as_view()),
 

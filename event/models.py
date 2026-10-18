@@ -17,9 +17,12 @@ class Event(models.Model):
         related_name="events",
     )
 
+    # Only tropical-cyclone events have a track; other event types
+    # (flood, earthquake, ...) have none.
     cyclone_track = models.ForeignKey(
         "cyclone_track.CycloneTrack",
         on_delete=models.PROTECT,
+        null=True,
         blank=True,
         related_name="events",
     )

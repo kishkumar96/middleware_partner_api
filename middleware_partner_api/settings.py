@@ -149,6 +149,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # GeoJSON/CSV-backed list responses are multi-MB and compress ~10x
+    "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -254,3 +256,6 @@ MAIL_CONFIG_ENCRYPTION_KEY = os.getenv("MAIL_CONFIG_ENCRYPTION_KEY")
 # Optional: default MailConfiguration name to use when calling
 # SPCMailer.send_notification_email_sync(to, subject, body) without specifying a config.
 MAILER_DEFAULT_CONFIGURATION_NAME = os.getenv("MAILER_DEFAULT_CONFIGURATION_NAME")
+
+# Who check_runner_health --email writes to (comma-separated)
+RUNNER_ALERT_EMAILS = os.getenv("RUNNER_ALERT_EMAILS", "")

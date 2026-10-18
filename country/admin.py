@@ -12,6 +12,6 @@ class IslandInline(admin.TabularInline):
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
-    list_display = ('short_name', 'long_name')
-    search_fields = ("short_name", "long_name")
+    list_display = ('code', 'short_name', 'long_name')
+    search_fields = ("code", "short_name", "long_name")
     inlines = (IslandInline,)

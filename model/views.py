@@ -14,4 +14,7 @@ class ModelRunListView(ListAPIView):
                 queryset = queryset.filter(model_run_completed=True)
             elif model_run_completed.lower() in ['false', '0', 'no']:
                 queryset = queryset.filter(model_run_completed=False)
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
         return queryset

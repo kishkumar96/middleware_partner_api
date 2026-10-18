@@ -3,8 +3,8 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticatedOrReadOnly
 
-from .models import RiskInformation, RiskScenario
-from .serializers import RiskInformationSerializer, RiskScenarioSerializer
+from .models import RiskInformation, RiskScenario, RiskScenarioBreakdown
+from .serializers import RiskInformationSerializer, RiskScenarioBreakdownSerializer, RiskScenarioSerializer
 
 
 class RiskInformationPagination(PageNumberPagination):
@@ -67,3 +67,13 @@ class RiskScenarioRetrieveView(RetrieveAPIView):
     permission_classes = [AllowAny]
     queryset = RiskScenario.objects.all().select_related("risk_information")
     serializer_class = RiskScenarioSerializer
+
+
+class RiskScenarioBreakdownListView(ListAPIView):
+    """Sector/asset-type rows of one scenario: ?risk_scenario=<id>&dimension=sector|asset_type."""
+
+    permission_classes = [AllowAny]
+    queryset = RiskScenarioBreakdown.objects.all().order_by("-total_loss", "name")
+    serializer_class = RiskScenarioBreakdownSerializer
+    pagination_class = RiskInformationPagination
+    filterset_fields = ("risk_scenario", "dimension")
